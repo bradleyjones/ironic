@@ -28,7 +28,7 @@ REQUIRED_PROPERTIES = {
 
 COMMON_PROPERTIES = REQUIRED_PROPERTIES
 
-imcsdk = importutils.try_import('ImcSdk')
+imcsdk_handle = importutils.import_class('imcsdk.imchandle.ImcHandle')
 
 
 def parse_driver_info(node):
@@ -49,20 +49,17 @@ def parse_driver_info(node):
     return info
 
 
-def handle_login(task, handle, info):
+def handle_login(task, handle):
     """Login to the CIMC handle.
 
     Run login on the CIMC handle, catching any ImcException and reraising
     it as an ironic CIMCException.
 
     :param handle: A CIMC handle.
-    :param info: A list of driver info as produced by parse_driver_info.
     :raises: CIMCException if there error logging in.
     """
     try:
-        handle.login(info['cimc_address'],
-                     info['cimc_username'],
-                     info['cimc_password'])
+        handle.login()
     except imcsdk.ImcException as e:
         raise exception.CIMCException(node=task.node.uuid, error=e)
 
@@ -76,9 +73,11 @@ def cimc_handle(task):
     :yields: A CIMC Handle for the node in the task.
     """
     info = parse_driver_info(task.node)
-    handle = imcsdk.ImcHandle()
+    handle = imcsdk_handle(info['cimc_address'],
+                           info['cimc_username'],
+                           info['cimc_password'])
 
-    handle_login(task, handle, info)
+    handle_login(task, handle)
     try:
         yield handle
     finally:

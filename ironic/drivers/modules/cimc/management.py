@@ -19,7 +19,7 @@ from ironic.common import exception
 from ironic.drivers import base
 from ironic.drivers.modules.cimc import common
 
-imcsdk = importutils.try_import('ImcSdk')
+imcsdk_exceptions = importutils.import_class('imcsdk.imcexception')
 
 
 CIMC_TO_IRONIC_BOOT_DEVICE = {
@@ -85,26 +85,16 @@ class CIMCManagement(base.ManagementInterface):
         """
 
         with common.cimc_handle(task) as handle:
-            method = imcsdk.ImcCore.ExternalMethod("ConfigResolveClass")
-            method.Cookie = handle.cookie
-            method.InDn = "sys/rack-unit-1"
-            method.InHierarchical = "true"
-            method.ClassId = "lsbootDef"
-
             try:
-                resp = handle.xml_query(method, imcsdk.WriteXmlOption.DIRTY)
-            except imcsdk.ImcException as e:
+                resp= handle.query_classid(class_id='lsbootDef',
+                        hierarchy=True)
+            except imcsdk_exceptions.ImcException as e:
                 raise exception.CIMCException(node=task.node.uuid, error=e)
-            error = getattr(resp, 'error_code', None)
-            if error:
-                raise exception.CIMCException(node=task.node.uuid, error=error)
-
-            bootDevs = resp.OutConfigs.child[0].child
 
             first_device = None
-            for dev in bootDevs:
+            for dev in resp:
                 try:
-                    if int(dev.Order) == 1:
+                    if int(dev.order) == 1:
                         first_device = dev
                         break
                 except (ValueError, AttributeError):

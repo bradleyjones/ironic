@@ -24,22 +24,23 @@ from ironic.conf import CONF
 from ironic.drivers import base
 from ironic.drivers.modules.cimc import common
 
-imcsdk = importutils.try_import('ImcSdk')
+imcsdk_compute_consts = importutils.import_class(
+    'imcsdk.mometa.compute.ComputeRackUnit.ComputeRackUnitConsts')
+imcsdk_exceptions = importutils.import_class('imcsdk.imcexception')
 
 LOG = logging.getLogger(__name__)
 
 
 if imcsdk:
     CIMC_TO_IRONIC_POWER_STATE = {
-        imcsdk.ComputeRackUnit.CONST_OPER_POWER_ON: states.POWER_ON,
-        imcsdk.ComputeRackUnit.CONST_OPER_POWER_OFF: states.POWER_OFF,
+        imcsdk_compute_consts.OPER_POWER_ON: states.POWER_ON,
+        imcsdk_compute_consts.OPER_POWER_OFF: states.POWER_OFF,
     }
 
     IRONIC_TO_CIMC_POWER_STATE = {
-        states.POWER_ON: imcsdk.ComputeRackUnit.CONST_ADMIN_POWER_UP,
-        states.POWER_OFF: imcsdk.ComputeRackUnit.CONST_ADMIN_POWER_DOWN,
-        states.REBOOT:
-            imcsdk.ComputeRackUnit.CONST_ADMIN_POWER_HARD_RESET_IMMEDIATE
+        states.POWER_ON: imcsdk_compute_consts.ADMIN_POWER_UP,
+        states.POWER_OFF: imcsdk_compute_consts.ADMIN_POWER_DOWN,
+        states.REBOOT: imcsdk_compute_consts.ADMIN_POWER_HARD_RESET_IMMEDIATE
     }
 
 
@@ -57,13 +58,11 @@ def _wait_for_state_change(target_state, task):
         current_power_state = None
         with common.cimc_handle(task) as handle:
             try:
-                rack_unit = handle.get_imc_managedobject(
-                    None, None, params={"Dn": "sys/rack-unit-1"}
-                )
-            except imcsdk.ImcException as e:
+                rack_unit = handle.query_dn('sys/rack-unit-1')
+            except imcsdk_exceptions.ImcException as e:
                 raise exception.CIMCException(node=task.node.uuid, error=e)
             else:
-                current_power_state = rack_unit[0].get_attr("OperPower")
+                current_power_state = rack_unit.oper_power
         store['state'] = CIMC_TO_IRONIC_POWER_STATE.get(current_power_state)
 
         if store['state'] == target_state:
@@ -108,13 +107,11 @@ class Power(base.PowerInterface):
         current_power_state = None
         with common.cimc_handle(task) as handle:
             try:
-                rack_unit = handle.get_imc_managedobject(
-                    None, None, params={"Dn": "sys/rack-unit-1"}
-                )
-            except imcsdk.ImcException as e:
+                rack_unit = handle.query_dn('sys/rack-unit-1')
+            except imcsdk_exceptions.ImcException as e:
                 raise exception.CIMCException(node=task.node.uuid, error=e)
             else:
-                current_power_state = rack_unit[0].get_attr("OperPower")
+                current_power_state = rack.oper_power
         return CIMC_TO_IRONIC_POWER_STATE.get(current_power_state,
                                               states.ERROR)
 
@@ -144,14 +141,10 @@ class Power(base.PowerInterface):
                 msg % {"node": task.node.uuid, "state": pstate})
         with common.cimc_handle(task) as handle:
             try:
-                handle.set_imc_managedobject(
-                    None, class_id="ComputeRackUnit",
-                    params={
-                        imcsdk.ComputeRackUnit.ADMIN_POWER:
-                            IRONIC_TO_CIMC_POWER_STATE[pstate],
-                        imcsdk.ComputeRackUnit.DN: "sys/rack-unit-1"
-                    })
-            except imcsdk.ImcException as e:
+                rack_unit = handle.query_dn('sys/rack-unit-1')
+                rack_unit.admin_power = IRONIC_TO_CIMC_POWER_STATE[pstate]
+                handle.set_mo(rack_unit)
+            except imcsdk_exceptions.ImcException as e:
                 raise exception.CIMCException(node=task.node.uuid, error=e)
 
         if pstate is states.REBOOT:
